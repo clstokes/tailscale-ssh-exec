@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"log"
@@ -50,15 +49,19 @@ func main() {
 func execCmd(command string, args []string) (string, error) {
 	cmd := exec.Command(command, args...)
 
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &out
+	// var out bytes.Buffer
+	// cmd.Stdout = &out
+	// cmd.Stderr = &out
+
+	cmd.Stdout = os.Stdout
+	cmd.Stdin = os.Stdin
+	cmd.Stderr = os.Stderr
 
 	err := cmd.Run()
 	if err != nil {
-		return out.String(), err
+		return "", err
 	}
-	return out.String(), nil
+	return "", nil
 }
 
 func getTailscaleUserFromSshEnv(ctx context.Context) (*tailcfg.UserProfile, error) {
