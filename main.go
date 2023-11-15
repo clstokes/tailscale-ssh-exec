@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -12,50 +13,46 @@ import (
 	"tailscale.com/tailcfg"
 )
 
+var (
+	cmd     = flag.String("c", "", "forced command via ssh - e.g. SSH_ORIGINAL_COMMAND")
+	verbose = flag.Bool("v", false, "enable verbose logging")
+)
+
 func main() {
-
-	f, err := os.OpenFile("/tmp/cameron.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-	if err != nil {
-		log.Fatalf("error opening file: %v", err)
-	}
-	defer f.Close()
-	log.SetOutput(f)
-
-	for _, e := range os.Environ() {
-		pair := strings.SplitN(e, "=", 2)
-		log.Println(fmt.Sprintf("%s = %s", pair[0], pair[1]))
+	flag.Parse()
+	if *cmd == "" {
+		flag.PrintDefaults()
+		os.Exit(1)
 	}
 
 	// get user from LocalApi
-	user, err := getTailscaleUserFromSshEnv(context.Background()) // TODO: is context.Background() correct?
+	user, err := getTailscaleUserFromConnection(context.Background())
 	if err != nil {
-		log.Println(fmt.Sprintf("error getting tailscale user [%v]", err))
+		logPrintln("error getting tailscale user [%v]", err)
 		os.Exit(1)
 	}
 
 	// execute command
-	userCommand := "/usr/bin/hg-ssh /home/hg/repo"
+	userCommand := "/usr/bin/hg-ssh /home/hg/repo" // TODO: don't hardcode
+
 	userCommandSplit := strings.SplitN(userCommand, " ", -1)
-	log.Println(fmt.Sprintf("connection from [%s] - running [%s] with args [%v]", user.LoginName, userCommandSplit[0], userCommandSplit[1:]))
-	out, err := execCmd(userCommandSplit[0], userCommandSplit[1:])
+	logPrintln("connection from [%s], incoming command [%v], running [%s] with args [%v]", user.LoginName, *cmd, userCommandSplit[0], userCommandSplit[1:])
+	out, err := execCmd(userCommandSplit[0], userCommandSplit[1:], *cmd)
 	if err != nil {
-		log.Println(fmt.Sprintf("error [%v] from command [%v]", err, out))
+		logPrintln("error [%v] from command [%v]", err, out)
 		os.Exit(1)
 	}
 
-	log.Println(fmt.Sprintf("command output [%v]", out))
+	logPrintln("command output [%v]", out)
 }
 
-func execCmd(command string, args []string) (string, error) {
+func execCmd(command string, args []string, ogCmd string) (string, error) {
 	cmd := exec.Command(command, args...)
-
-	// var out bytes.Buffer
-	// cmd.Stdout = &out
-	// cmd.Stderr = &out
-
 	cmd.Stdout = os.Stdout
 	cmd.Stdin = os.Stdin
 	cmd.Stderr = os.Stderr
+
+	cmd.Env = append(os.Environ(), fmt.Sprintf("SSH_ORIGINAL_COMMAND=%s", ogCmd))
 
 	err := cmd.Run()
 	if err != nil {
@@ -64,20 +61,20 @@ func execCmd(command string, args []string) (string, error) {
 	return "", nil
 }
 
-func getTailscaleUserFromSshEnv(ctx context.Context) (*tailcfg.UserProfile, error) {
+func getTailscaleUserFromConnection(ctx context.Context) (*tailcfg.UserProfile, error) {
 	// SSH_CLIENT = 100.110.18.145 60800 22
 	sshClient := os.Getenv("SSH_CLIENT")
 	sshClientValues := strings.SplitN(sshClient, " ", 3)
 	ipPort := fmt.Sprintf("%s:%s", sshClientValues[0], sshClientValues[1])
 
-	user, err := getTailscaleUser(ctx, ipPort)
+	user, err := getTailscaleUserProfile(ctx, ipPort)
 	if err != nil {
 		return nil, fmt.Errorf("error getting Tailscale user: %v", err)
 	}
 	return user, nil
 }
 
-func getTailscaleUser(ctx context.Context, ipPort string) (*tailcfg.UserProfile, error) {
+func getTailscaleUserProfile(ctx context.Context, ipPort string) (*tailcfg.UserProfile, error) {
 	localClient := &tailscale.LocalClient{}
 	whois, err := localClient.WhoIs(ctx, ipPort)
 
@@ -92,4 +89,11 @@ func getTailscaleUser(ctx context.Context, ipPort string) (*tailcfg.UserProfile,
 	}
 
 	return whois.UserProfile, nil
+}
+
+func logPrintln(format string, a ...any) {
+	if *verbose == false {
+		return
+	}
+	log.Println(fmt.Sprintf(format, a...))
 }
