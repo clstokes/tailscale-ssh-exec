@@ -2,7 +2,7 @@
 
 [![status: experimental](https://img.shields.io/badge/status-experimental-blue)](https://tailscale.com/kb/1167/release-stages/#experimental)
 
-A program to wrap for shell access via Tailscale SSH to restrict the commands that can be run based on the remote Tailscale user that is connecting.
+A program to wrap shell access via Tailscale SSH to restrict the commands that can be run based on the remote Tailscale user that is connecting.
 
 ## Usage
 
