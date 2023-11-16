@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
@@ -14,13 +15,16 @@ import (
 )
 
 var (
-	cmd     = flag.String("c", "", "forced command via ssh - e.g. SSH_ORIGINAL_COMMAND")
-	verbose = flag.Bool("v", false, "enable verbose logging")
+	cmd = flag.String("c", "", "forced command via ssh - e.g. SSH_ORIGINAL_COMMAND")
+
+	// These flags are prefixed with -tailscale-ssh-exec... to not interfere with any other arguments that may get passed in.
+	userCommandMappingFile = flag.String("tailscale-ssh-exec-user-commands-file", "", "file containing user-to-command mapping - e.g. tailscale-login-name,command and args")
+	verbose                = flag.Bool("tailscale-ssh-exec-verbose", false, "enable verbose logging")
 )
 
 func main() {
 	flag.Parse()
-	if *cmd == "" {
+	if *userCommandMappingFile == "" {
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
@@ -32,9 +36,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	// execute command
-	userCommand := "/usr/bin/hg-ssh /home/hg/repo" // TODO: don't hardcode
+	// get command from cmdFile
+	userCommand, err := findUserCommand(*userCommandMappingFile, user.LoginName)
+	if err != nil {
+		logPrintln("unable to find command for user [%v]", err)
+		os.Exit(1)
+	}
 
+	// execute command
 	userCommandSplit := strings.SplitN(userCommand, " ", -1)
 	logPrintln("connection from [%s], incoming command [%v], running [%s] with args [%v]", user.LoginName, *cmd, userCommandSplit[0], userCommandSplit[1:])
 	out, err := execCmd(userCommandSplit[0], userCommandSplit[1:], *cmd)
@@ -42,8 +51,44 @@ func main() {
 		logPrintln("error [%v] from command [%v]", err, out)
 		os.Exit(1)
 	}
+}
 
-	logPrintln("command output [%v]", out)
+func getTailscaleUserFromConnection(ctx context.Context) (*tailcfg.UserProfile, error) {
+	// SSH_CLIENT = 100.110.18.145 60800 22
+	sshClient := os.Getenv("SSH_CLIENT")
+	sshClientValues := strings.SplitN(sshClient, " ", 3)
+	ipPort := fmt.Sprintf("%s:%s", sshClientValues[0], sshClientValues[1])
+
+	user, err := getTailscaleUserProfile(ctx, ipPort)
+	if err != nil {
+		return nil, fmt.Errorf("error getting Tailscale user: %v", err)
+	}
+	return user, nil
+}
+
+func findUserCommand(fileName string, loginName string) (string, error) {
+	file, err := os.Open(fileName)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		lineSplit := strings.SplitN(line, ",", 2)
+		for i := range lineSplit {
+			lineSplit[i] = strings.TrimSpace(lineSplit[i])
+		}
+
+		if lineSplit[0] == loginName {
+			cmd := lineSplit[1]
+			return cmd, nil
+		}
+	}
+
+	return "", fmt.Errorf("no command found for [%s]", loginName)
 }
 
 func execCmd(command string, args []string, ogCmd string) (string, error) {
@@ -59,19 +104,6 @@ func execCmd(command string, args []string, ogCmd string) (string, error) {
 		return "", err
 	}
 	return "", nil
-}
-
-func getTailscaleUserFromConnection(ctx context.Context) (*tailcfg.UserProfile, error) {
-	// SSH_CLIENT = 100.110.18.145 60800 22
-	sshClient := os.Getenv("SSH_CLIENT")
-	sshClientValues := strings.SplitN(sshClient, " ", 3)
-	ipPort := fmt.Sprintf("%s:%s", sshClientValues[0], sshClientValues[1])
-
-	user, err := getTailscaleUserProfile(ctx, ipPort)
-	if err != nil {
-		return nil, fmt.Errorf("error getting Tailscale user: %v", err)
-	}
-	return user, nil
 }
 
 func getTailscaleUserProfile(ctx context.Context, ipPort string) (*tailcfg.UserProfile, error) {

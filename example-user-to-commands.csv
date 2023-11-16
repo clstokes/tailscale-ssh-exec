@@ -1,0 +1,2 @@
+user1@example.com,/usr/bin/echo Hi user1
+user2@example.com,/usr/bin/hg-ssh /home/hg/repo
