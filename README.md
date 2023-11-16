@@ -20,4 +20,28 @@ A program to wrap for shell access via Tailscale SSH to restrict the commands th
     hg:x:1001:1001::/home/hg:/usr/local/bin/tailscale-ssh-exec.sh
     ```
 
-1. Modify `tailscale-ssh-exec.sh` to customize any arguments to `tailscale-ssh-exec` - e.g. `-v` to enable verbose logging; helpful for troubleshooting during set up.
+1. Restrict port forwading, sftp, and pty via Tailscale environment variables. Typically you would do this by adding the following to `/etc/default/tailscaled` with:
+
+    ```shell
+    TS_SSH_DISABLE_SFTP=true
+    TS_SSH_DISABLE_FORWARDING=true
+    TS_SSH_DISABLE_PTY=true
+    ```
+
+1. Create a CSV that maps Tailscale login names to the specific command and arguments to run for each user.
+
+    ```csv
+    user1@example.com,/usr/bin/echo Hi user1
+    user2@example.com,/usr/bin/hg-ssh /home/hg/repo
+    ```
+
+1. Modify `tailscale-ssh-exec.sh` to specify the CSV file from the previous step and customize any additional arguments to `tailscale-ssh-exec` - e.g. `-v` to enable verbose logging; helpful for troubleshooting during set up.
+
+```shell
+#!/bin/sh
+
+/usr/local/bin/tailscale-ssh-exec \
+    "$@" \
+    -tailscale-ssh-exec-user-commands-file /tmp/example-user-to-commands.csv \
+    -tailscale-ssh-exec-verbose
+```
