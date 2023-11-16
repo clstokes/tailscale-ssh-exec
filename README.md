@@ -20,7 +20,7 @@ A program to wrap for shell access via Tailscale SSH to restrict the commands th
     hg:x:1001:1001::/home/hg:/usr/local/bin/tailscale-ssh-exec.sh
     ```
 
-1. Restrict port forwading, sftp, and pty via Tailscale environment variables. Typically you would do this by adding the following to `/etc/default/tailscaled` with:
+1. Restrict port forwading, sftp, and pty via Tailscale environment variables available in an [unstable release](https://tailscale.com/kb/1083/install-unstable/) 1.53.120 or later. Typically you would do this by adding the following to `/etc/default/tailscaled` with:
 
     ```shell
     TS_SSH_DISABLE_SFTP=true
